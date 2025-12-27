@@ -1,36 +1,35 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '../../../lib/supabase' 
+import { supabase } from '../../../lib/supabase'
 
 export async function POST(request) {
   try {
-    // 1. Recebe os dados enviados pelo script .BAT
+    // Agora esperamos 'database_id'
     const body = await request.json()
-    const { loja_id, status, mensagem } = body
+    const { database_id, status, message } = body
 
-    // 2. Validação básica (segurança)
-    if (!loja_id || !status) {
-      return NextResponse.json({ error: 'Faltam dados (loja_id ou status)' }, { status: 400 })
+    // Validação
+    if (!database_id || !status) {
+      return NextResponse.json({ error: 'Faltam dados (database_id ou status)' }, { status: 400 })
     }
 
-    // 3. Atualiza ou Cria a loja no banco de dados
+    // Salva na tabela 'databases'
     const { error } = await supabase
-      .from('lojas')
+      .from('databases') 
       .upsert({ 
-        id: loja_id, 
+        id: database_id, 
         status: status, 
-        mensagem: mensagem,
-        ultima_sincronizacao: new Date().toISOString() 
+        message: message,
+        last_update: new Date().toISOString() 
       })
 
     if (error) {
-      console.error('Erro no Supabase:', error)
+      console.error('Erro Supabase:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // 4. Responde "OK" para o script
-    return NextResponse.json({ success: true, message: 'Atualizado com sucesso' })
+    return NextResponse.json({ success: true, message: 'Database atualizado!' })
 
   } catch (error) {
-    return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
