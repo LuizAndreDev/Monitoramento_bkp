@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '../../lib/supabase'
 import { LogOut, RefreshCw, Server, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 
 export default function Dashboard() {
