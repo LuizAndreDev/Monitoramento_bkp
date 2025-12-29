@@ -20,6 +20,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 
+function formatDiskGbPtBR(value) {
+  // Aceita número ou string (ex: "110.3")
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return "—"
+
+  // 1 casa decimal (110,3) + sufixo GB
+  return `${n.toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })} GB`
+}
+
+function safeDate(value) {
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 export default function Dashboard() {
   const [databases, setDatabases] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,12 +51,24 @@ export default function Dashboard() {
         .order('last_update', { ascending: false })
 
       if (error) {
-        console.error("Erro ao buscar databases:", error)
+        console.error('Erro ao buscar dados:', error)
         setLoading(false)
         return
       }
 
-      setDatabases(Array.isArray(data) ? data : [])
+      if (data) {
+        // Dedup por id (caso haja duplicidade)
+        const unicos = []
+        const map = new Map()
+        for (const item of data) {
+          const key = String(item?.id ?? '')
+          if (!map.has(key)) {
+            map.set(key, true)
+            unicos.push(item)
+          }
+        }
+        setDatabases(unicos)
+      }
       setLoading(false)
     }
 
@@ -54,25 +83,11 @@ export default function Dashboard() {
   }
 
   const getStatusBadge = (db) => {
-    const status = String(db?.status ?? '').toLowerCase()
-
-    // Se não tem last_update, já considera como "atrasado"
-    if (!db?.last_update) {
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 gap-1"
-        >
-          <AlertTriangle size={12} /> Sem update
-        </Badge>
-      )
-    }
-
     const agora = new Date()
-    const dataBackup = new Date(db.last_update)
-    const diffHoras = Math.abs(agora - dataBackup) / 36e5
+    const dataBackup = safeDate(db?.last_update)
+    const diffHoras = dataBackup ? (Math.abs(agora - dataBackup) / 36e5) : 9999
 
-    if (status === 'erro') {
+    if ((db?.status ?? '').toLowerCase() === 'erro') {
       return (
         <Badge variant="destructive" className="gap-1">
           <XCircle size={12} /> Falha Crítica
@@ -99,12 +114,12 @@ export default function Dashboard() {
   }
 
   const dbsFiltrados = useMemo(() => {
-    const f = String(filtro ?? "").toLowerCase().trim()
+    const f = (filtro ?? '').toLowerCase().trim()
     if (!f) return databases
 
     return databases.filter((db) => {
-      const idStr = String(db?.id ?? "").toLowerCase()
-      const nameStr = String(db?.client_name ?? "").toLowerCase()
+      const idStr = String(db?.id ?? '').toLowerCase()
+      const nameStr = String(db?.client_name ?? '').toLowerCase()
       return idStr.includes(f) || nameStr.includes(f)
     })
   }, [databases, filtro])
@@ -128,16 +143,23 @@ export default function Dashboard() {
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar cliente ou ID..."
+              placeholder="Buscar cliente..."
               className="pl-8 bg-card border-border"
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
             />
           </div>
+
           <Button variant="outline" size="icon" onClick={() => window.location.reload()}>
             <Clock className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleLogout} className="text-muted-foreground hover:text-destructive">
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-destructive"
+          >
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
@@ -154,43 +176,48 @@ export default function Dashboard() {
             <p className="col-span-full text-center py-10 text-muted-foreground">Nenhum cliente encontrado.</p>
           ) : (
             dbsFiltrados.map((db) => {
-              const clientName = db?.client_name || `Cliente #${db?.id ?? "?"}`
-              const msg = db?.message ?? ""
+              const lastUpdate = safeDate(db?.last_update)
 
-              const last = db?.last_update ? new Date(db.last_update) : null
-              const lastText = last
-                ? `${last.toLocaleDateString('pt-BR')} às ${last.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                : "Sem atualização"
+              // título: preferir client_name se existir; senão id
+              const titulo = (db?.client_name && String(db.client_name).trim())
+                ? String(db.client_name)
+                : String(db?.id ?? '')
 
               return (
-                <Card key={db.id} className="border-border/50 bg-card/50 hover:bg-card/80 transition-all hover:border-primary/30">
+                <Card
+                  key={String(db?.id ?? titulo)}
+                  className="border-border/50 bg-card/50 hover:bg-card/80 transition-all hover:border-primary/30"
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle
                       className="text-sm font-medium truncate pr-4 text-foreground"
-                      title={clientName}
+                      title={titulo}
                     >
-                      {clientName}
+                      {titulo}
                     </CardTitle>
                     {getStatusBadge(db)}
                   </CardHeader>
 
                   <CardContent>
-                    <div className="flex items-center justify-between mt-2 mb-4">
-                      <div className="text-2xl font-bold text-primary/90 truncate" title={clientName}>
-                        {clientName}
-                      </div>
-                      <div className="text-xs text-muted-foreground font-mono ml-3">
-                        ID: {db?.id ?? "-"}
-                      </div>
-                    </div>
+                    <div className="text-2xl font-bold text-primary/90 mt-2 mb-4">PostgreSQL</div>
 
                     <div className="rounded-md bg-muted p-2 text-xs font-mono text-muted-foreground truncate mb-4 border border-border">
-                      {msg || "Sem mensagem"}
+                      {db?.message ?? ''}
                     </div>
 
                     <div className="flex items-center text-xs text-muted-foreground">
                       <Clock className="mr-1 h-3 w-3" />
-                      Último backup: {lastText}
+                      Último backup:{' '}
+                      {lastUpdate
+                        ? `${lastUpdate.toLocaleDateString('pt-BR')} às ${lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                        : '—'}
+                    </div>
+
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Espaço livre:{' '}
+                      <span className="font-medium text-foreground">
+                        {formatDiskGbPtBR(db?.disk_free_gb)}
+                      </span>
                     </div>
                   </CardContent>
                 </Card>
